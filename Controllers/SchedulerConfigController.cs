@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Reflection.Metadata.Ecma335;
 using System.Text;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
@@ -13,6 +14,7 @@ using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using WebApplication10.Model;
 using WebApplication10.Model.Interfaces;
+using WebApplication10.Services;
 
 // For more information on enabling Web API for empty projects, visit https://go.microsoft.com/fwlink/?LinkID=397860
 
@@ -20,14 +22,14 @@ namespace WebApplication10.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class HomeController : ControllerBase
+    public class SchedulerConfigController : ControllerBase
     {
 
         private IAppSettings _config;
-        private ILogger<HomeController> _logger;
+        private ILogger<SchedulerConfigController> _logger;
 
         string path = Path.Combine(Model.Constants.RootPath, "response", "response.json");
-        public HomeController(ILogger<HomeController> logger, IAppSettings appSettings)
+        public SchedulerConfigController(ILogger<SchedulerConfigController> logger, IAppSettings appSettings)
         {
             _config = appSettings;
             _logger = logger;
@@ -37,43 +39,69 @@ namespace WebApplication10.Controllers
         [HttpGet]
         public string Get()
         {
-            StringBuilder sb = new StringBuilder();
-            if (!string.IsNullOrWhiteSpace(path))
+            try
             {
-                using(StreamReader sr = new StreamReader(path))
+                StringBuilder sb = new StringBuilder();
+                if (!string.IsNullOrWhiteSpace(path))
                 {
-                    sb.Append(sr.ReadToEnd());
+                    using (StreamReader sr = new StreamReader(path))
+                    {
+                        sb.Append(sr.ReadToEnd());
+                    }
                 }
-            }
 
-            return sb.ToString();
+                return sb.ToString();
+            }
+            catch(Exception ex)
+            {
+                _logger.LogError(ex, "error occuered");
+                
+            }
+            return String.Empty;
         }
 
         [HttpGet("Tokens")]
         public string GetTokens()
         {
-            var tokenPath = Path.Combine(Model.Constants.RootPath, "response", "QBToken.json");
-            var d = Common.ReadJson<QBToken>(tokenPath);
-            
-            if(d != null)
+            try
             {
-                return JsonConvert.SerializeObject(d);
-            }
+                var tokenPath = Path.Combine(Model.Constants.RootPath, "response", "QBToken.json");
+                var d = Common.ReadJson<QBToken>(tokenPath);
 
-            return "";
+                if (d != null)
+                {
+                    return JsonConvert.SerializeObject(d);
+                }
+            }
+            catch(Exception ex)
+            {
+                _logger.LogError(ex, "error :Tokens");
+            }
+            
+
+            return string.Empty;
         }
 
 
         [HttpPost("Tokens")]
         public bool GetTokens(QBToken callback)
         {
-            var tokenPath = Path.Combine(Model.Constants.RootPath, "response", "QBToken.json");
-            if(callback != null)
+            try
             {
-                Common.SaveJson(tokenPath,JsonConvert.SerializeObject(callback));
+                var tokenPath = Path.Combine(Model.Constants.RootPath, "response", "QBToken.json");
+                if (callback != null)
+                {
+                    Common.SaveJson(tokenPath, JsonConvert.SerializeObject(callback));
 
-                return true;
+                    return true;
+                }
+
             }
+            catch(Exception ex)
+            {
+                _logger.LogError(ex, "error opccured");
+            }
+
 
             return false;
             
@@ -95,6 +123,7 @@ namespace WebApplication10.Controllers
             try
             {
                 _logger.LogInformation("Callback");
+
                 path = Path.Combine(Model.Constants.RootPath, "response", "response.json");
                 //var filepath = _appSettings.CallbackConfig.Path;
                 var queryString = Request.QueryString.ToString();
@@ -109,7 +138,7 @@ namespace WebApplication10.Controllers
                 };
                 GenerateTokens(callback);
                 var data = JsonConvert.SerializeObject(callback);
-
+                
                 Common.SaveJson(path, data);
                 //Debug.WriteLine(bodyContent);
                 return "successully saved code";
@@ -119,6 +148,12 @@ namespace WebApplication10.Controllers
                 _logger.LogError("Error occured:", ex);
                 return null;
             }
+        }
+
+        public void SaveToStorage(string data)
+        {
+            BlobService services = new BlobService();
+            services.UploadFileToBlobAsync("QBOTokens.json", data).Wait();
         }
 
         [HttpGet("Realm")]
@@ -157,9 +192,10 @@ namespace WebApplication10.Controllers
                         RefreshTokenExpiresIn = curDateTime.AddSeconds(response.RefreshTokenExpiresIn),
                         AccessTokenExpiresIn = curDateTime.AddSeconds(response.AccessTokenExpiresIn)
                     };
-
+                    SaveToStorage(JsonConvert.SerializeObject(token));
                     var tokenPath = Path.Combine(Model.Constants.RootPath, "response", "QBToken.json"); 
                     Common.SaveJson(tokenPath, JsonConvert.SerializeObject(token));
+                    
                 }
                 else
                 {
